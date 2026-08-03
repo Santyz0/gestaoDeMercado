@@ -1,0 +1,497 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mercado Estoque - Dashboard</title>
+
+    <!-- React e ReactDOM-->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"> </script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+
+    <!-- Babel compilar JSX -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <!-- TailwindCss -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- Lucid icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <script>
+        tailwind.config ={
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            50: '#f0fdf4',
+                            100: '#dcfce7',
+                            500: '#22c55e',
+                            600: '#16a34a',
+                            700: '#15803d'
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #f3f4f6;  }
+        .custom-scrollbar::-webkit-scrollbar {height: 8px; width: 8px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: #f1f1f1; border-radius: 4px;}
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #c1c1c1; border-radius: 4px;}
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #a8a8a8}
+        
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+    <script type="text/babel">
+        const { useState, useEffect, useCallback } = React;
+
+        // Configuração da API base
+        const API_BASE_URL = 'http://127.0.0.1:8000';
+
+        // --- COMPONENTES DE UI ---
+
+        const Card = ({ children, className = "" }) => (
+            <div className={`bg-white rounded-xl shadow-sm border border-gray-100 p-6 ${className}`}>
+                {children}
+            </div>
+        );
+
+        const Button = ({ children, variant = 'primary', className = "", ...props }) => {
+            const baseStyle = "px-4 py-2 rounded-lg font-medium transition-colors duration-200 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed";
+            const variants = {
+                primary: "bg-brand-600 text-white hover:bg-brand-700 active:bg-brand-800",
+                secondary: "bg-gray-100 text-gray-700 hover:bg-gray-200 active:bg-gray-300",
+                danger: "bg-red-50 text-red-600 hover:bg-red-100 active:bg-red-200"
+            };
+            return (
+                <button className={`${baseStyle} ${variants[variant]} ${className}`} {...props}>
+                    {children}
+                </button>
+            );
+        };
+
+        const Input = ({ label, error, ...props }) => (
+            <div className="flex flex-col gap-1 mb-4">
+                <label className="text-sm font-medium text-gray-700">{label}</label>
+                <input 
+                    className={`border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 transition-shadow
+                        ${error ? 'border-red-500 focus:ring-red-200' : 'border-gray-300 focus:ring-brand-100 focus:border-brand-500'}`}
+                    {...props} 
+                />
+                {error && <span className="text-xs text-red-500">{error}</span>}
+            </div>
+        );
+
+        const Select = ({ label, options, error, ...props }) => (
+            <div className="flex flex-col gap-1 mb-4">
+                <label className="text-sm font-medium text-gray-700">{label}</label>
+                <select 
+                    className={`border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 transition-shadow bg-white
+                        ${error ? 'border-red-500 focus:ring-red-200' : 'border-gray-300 focus:ring-brand-100 focus:border-brand-500'}`}
+                    {...props} 
+                >
+                    <option value="" disabled>Selecione...</option>
+                    {options.map(opt => (
+                        <option key={opt.value} value={opt.value}>{opt.label}</option>
+                    ))}
+                </select>
+                {error && <span className="text-xs text-red-500">{error}</span>}
+            </div>
+        );
+
+        // --- COMPONENTE PRINCIPAL (App) ---
+
+        const App = () => {
+            const [produtos, setProdutos] = useState([]);
+            const [loading, setLoading] = useState(true);
+            const [error, setError] = useState(null);
+            
+            // Estado para os modais/formulários
+            const [isProdutoModalOpen, setIsProdutoModalOpen] = useState(false);
+            const [isMovModalOpen, setIsMovModalOpen] = useState(false);
+
+            // Estados dos formulários
+            const [formProduto, setFormProduto] = useState({ nome: '', codigo_barras: '', preco: '', quantidade_estoque: '' });
+            const [formMov, setFormMov] = useState({ produto_id: '', quantidade: '', tipo: 'entrada' });
+            const [formErrors, setFormErrors] = useState({});
+
+            const fetchProdutos = useCallback(async () => {
+                try {
+                    setLoading(true);
+                    setError(null);
+                    const response = await fetch(`${API_BASE_URL}/produtos`);
+                    if (!response.ok) throw new Error('Falha ao carregar produtos. Verifique se a API está rodando.');
+                    const data = await response.json();
+                    setProdutos(data);
+                } catch (err) {
+                    setError(err.message);
+                } finally {
+                    setLoading(false);
+                }
+            }, []);
+
+            useEffect(() => {
+                fetchProdutos();
+            }, [fetchProdutos]);
+
+            // Re-renderizar ícones do Lucide após atualizações do DOM
+            useEffect(() => {
+                if (window.lucide) {
+                    window.lucide.createIcons();
+                }
+            });
+
+            const handleProdutoSubmit = async (e) => {
+                e.preventDefault();
+                setFormErrors({});
+                
+                // Validação básica frontend
+                if (!formProduto.nome) return setFormErrors({ nome: "Nome é obrigatório" });
+                if (!formProduto.codigo_barras) return setFormErrors({ codigo_barras: "Código é obrigatório" });
+                if (parseFloat(formProduto.preco) <= 0) return setFormErrors({ preco: "Preço deve ser maior que zero" });
+                
+                try {
+                    const response = await fetch(`${API_BASE_URL}/produtos`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            nome: formProduto.nome,
+                            codigo_barras: formProduto.codigo_barras,
+                            preco: parseFloat(formProduto.preco),
+                            quantidade_estoque: parseInt(formProduto.quantidade_estoque) || 0
+                        })
+                    });
+
+                    if (!response.ok) {
+                        const errorData = await response.json();
+                        throw new Error(errorData.detail || 'Erro ao cadastrar produto');
+                    }
+
+                    await fetchProdutos();
+                    setIsProdutoModalOpen(false);
+                    setFormProduto({ nome: '', codigo_barras: '', preco: '', quantidade_estoque: '' });
+                } catch (err) {
+                    alert(`Erro: ${err.message}`);
+                }
+            };
+
+            const handleMovimentacaoSubmit = async (e) => {
+                e.preventDefault();
+                setFormErrors({});
+
+                if (!formMov.produto_id) return setFormErrors({ produto_id: "Selecione um produto" });
+                if (parseInt(formMov.quantidade) <= 0) return setFormErrors({ quantidade: "Quantidade deve ser maior que zero" });
+
+                try {
+                    const response = await fetch(`${API_BASE_URL}/movimentacoes`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            produto_id: parseInt(formMov.produto_id),
+                            quantidade: parseInt(formMov.quantidade),
+                            tipo: formMov.tipo
+                        })
+                    });
+
+                    if (!response.ok) {
+                        const errorData = await response.json();
+                        throw new Error(errorData.detail || 'Erro ao registrar movimentação');
+                    }
+
+                    await fetchProdutos(); // Recarrega lista para atualizar saldo
+                    setIsMovModalOpen(false);
+                    setFormMov({ produto_id: '', quantidade: '', tipo: 'entrada' });
+                } catch (err) {
+                    alert(`Erro: ${err.message}`);
+                }
+            };
+
+            const handleDeletarProduto = async (id) => {
+                if(!window.confirm("Tem certeza que deseja deletar este produto?")) return;
+                try {
+                    const response = await fetch(`${API_BASE_URL}/produtos/${id}`, {
+                        method: 'DELETE'
+                    });
+                    if (!response.ok) throw new Error('Erro ao deletar produto');
+                    await fetchProdutos();
+                } catch (err) {
+                    alert(`Erro: ${err.message}`);
+                }
+            }
+
+
+            const totalProdutos = produtos.length;
+            const valorTotalEstoque = produtos.reduce((acc, p) => acc + (p.preco * p.estoque), 0);
+            const itensBaixoEstoque = produtos.filter(p => p.estoque < 10).length;
+
+            return (
+                <div className="min-h-screen pb-12">
+                    {/* Header */}
+                    <header className="bg-white border-b border-gray-200 sticky top-0 z-10">
+                        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+                            <div className="flex items-center gap-2 text-brand-600">
+                                <i data-lucide="package-search" className="w-8 h-8"></i>
+                                <h1 className="text-xl font-bold tracking-tight text-gray-900">Mercado Estoque</h1>
+                            </div>
+                            <div className="flex items-center gap-3">
+                                <Button variant="secondary" onClick={fetchProdutos} title="Atualizar dados">
+                                    <i data-lucide="refresh-cw" className="w-4 h-4"></i>
+                                </Button>
+                            </div>
+                        </div>
+                    </header>
+
+                    <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8">
+                        
+                        {/* Mensagem de Erro de Conexão */}
+                        {error && (
+                            <div className="mb-6 bg-red-50 border-l-4 border-red-500 p-4 rounded-r-md flex items-start gap-3">
+                                <i data-lucide="alert-circle" className="text-red-500 w-5 h-5 shrink-0 mt-0.5"></i>
+                                <div>
+                                    <h3 className="text-red-800 font-medium">Erro de Conexão</h3>
+                                    <p className="text-red-700 text-sm mt-1">{error}</p>
+                                    <p className="text-red-600 text-xs mt-2">Certifique-se de que a API FastAPI está rodando em {API_BASE_URL} e o CORS está configurado corretamente.</p>
+                                </div>
+                            </div>
+                        )}
+
+                        {}
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+                            <Card className="flex items-center gap-4">
+                                <div className="p-3 bg-blue-100 text-blue-600 rounded-lg">
+                                    <i data-lucide="boxes" className="w-6 h-6"></i>
+                                </div>
+                                <div>
+                                    <p className="text-sm font-medium text-gray-500">Total de Produtos</p>
+                                    <p className="text-2xl font-bold text-gray-900">{totalProdutos}</p>
+                                </div>
+                            </Card>
+                            
+                            <Card className="flex items-center gap-4">
+                                <div className="p-3 bg-brand-100 text-brand-600 rounded-lg">
+                                    <i data-lucide="wallet" className="w-6 h-6"></i>
+                                </div>
+                                <div>
+                                    <p className="text-sm font-medium text-gray-500">Valor em Estoque</p>
+                                    <p className="text-2xl font-bold text-gray-900">
+                                        {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(valorTotalEstoque)}
+                                    </p>
+                                </div>
+                            </Card>
+
+                            <Card className="flex items-center gap-4">
+                                <div className="p-3 bg-amber-100 text-amber-600 rounded-lg">
+                                    <i data-lucide="alert-triangle" className="w-6 h-6"></i>
+                                </div>
+                                <div>
+                                    <p className="text-sm font-medium text-gray-500">Baixo Estoque (&lt; 10)</p>
+                                    <p className="text-2xl font-bold text-gray-900">{itensBaixoEstoque}</p>
+                                </div>
+                            </Card>
+                        </div>
+
+                        {}
+                        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+                            <h2 className="text-lg font-semibold text-gray-900">Catálogo de Produtos</h2>
+                            <div className="flex gap-2 w-full sm:w-auto">
+                                <Button className="flex-1 sm:flex-none" onClick={() => setIsProdutoModalOpen(true)}>
+                                    <i data-lucide="plus" className="w-4 h-4"></i>
+                                    Novo Produto
+                                </Button>
+                                <Button variant="secondary" className="flex-1 sm:flex-none border border-gray-200" onClick={() => setIsMovModalOpen(true)}>
+                                    <i data-lucide="arrow-left-right" className="w-4 h-4"></i>
+                                    Movimentar
+                                </Button>
+                            </div>
+                        </div>
+
+                        <Card className="p-0 overflow-hidden">
+                            <div className="overflow-x-auto custom-scrollbar">
+                                <table className="w-full text-left border-collapse">
+                                    <thead>
+                                        <tr className="bg-gray-50 border-b border-gray-200 text-sm font-medium text-gray-500 uppercase tracking-wider">
+                                            <th className="px-6 py-4">Cód. Barras</th>
+                                            <th className="px-6 py-4">Produto</th>
+                                            <th className="px-6 py-4 text-right">Preço (R$)</th>
+                                            <th className="px-6 py-4 text-right">Estoque</th>
+                                            <th className="px-6 py-4 text-center">Remover</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-gray-200 bg-white">
+                                        {loading && produtos.length === 0 ? (
+                                            <tr>
+                                                <td colSpan="5" className="px-6 py-12 text-center text-gray-500">
+                                                    <i data-lucide="loader-2" className="w-8 h-8 animate-spin mx-auto mb-2 text-brand-500"></i>
+                                                    Carregando produtos...
+                                                </td>
+                                            </tr>
+                                        ) : produtos.length === 0 ? (
+                                            <tr>
+                                                <td colSpan="5" className="px-6 py-12 text-center text-gray-500">
+                                                    <div className="flex flex-col items-center justify-center">
+                                                        <i data-lucide="package-open" className="w-12 h-12 text-gray-300 mb-3"></i>
+                                                        <p>Nenhum produto cadastrado no momento.</p>
+                                                        <p className="text-sm mt-1">Clique em "Novo Produto" para começar.</p>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        ) : (
+                                            produtos.map((produto) => (
+                                                <tr key={produto.id} className="hover:bg-gray-50 transition-colors group">
+                                                    <td className="px-6 py-4 whitespace-nowrap text-sm font-mono text-gray-500">
+                                                        {produto.codigo_barras}
+                                                    </td>
+                                                    <td className="px-6 py-4 whitespace-nowrap">
+                                                        <div className="font-medium text-gray-900">{produto.nome}</div>
+                                                        <div className="text-xs text-gray-400">ID: {produto.id}</div>
+                                                    </td>
+                                                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm text-gray-900">
+                                                        {produto.preco.toFixed(2)}
+                                                    </td>
+                                                    <td className="px-6 py-4 whitespace-nowrap text-right">
+                                                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium
+                                                            ${produto.estoque === 0 ? 'bg-red-100 text-red-800' : 
+                                                              produto.estoque < 10 ? 'bg-amber-100 text-amber-800' : 
+                                                              'bg-green-100 text-green-800'}`}>
+                                                            {produto.estoque} un
+                                                        </span>
+                                                    </td>
+                                                    <td className="px-6 py-4 whitespace-nowrap text-center text-sm font-medium">
+                                                        <button 
+                                                            onClick={() => handleDeletarProduto(produto.id)}
+                                                            className="text-gray-400 hover:text-red-600 transition-colors opacity-0 group-hover:opacity-100"
+                                                            title="Excluir produto"
+                                                        >
+                                                            <i data-lucide="trash-2" className="w-4 h-4"></i>
+                                                        </button>
+                                                    </td>
+                                                </tr>
+                                            ))
+                                        )}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </Card>
+
+                        {}
+                        {/* Modal Novo Produto */}
+                        {isProdutoModalOpen && (
+                            <div className="fixed inset-0 bg-gray-900/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+                                <div className="bg-white rounded-xl shadow-xl w-full max-w-md overflow-hidden">
+                                    <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
+                                        <h3 className="text-lg font-semibold text-gray-900">Cadastrar Novo Produto</h3>
+                                        <button onClick={() => setIsProdutoModalOpen(false)} className="text-gray-400 hover:text-gray-600">
+                                            <i data-lucide="x" className="w-5 h-5"></i>
+                                        </button>
+                                    </div>
+                                    <form onSubmit={handleProdutoSubmit} className="p-6">
+                                        <Input 
+                                            label="Nome do Produto" 
+                                            placeholder="Ex: Arroz Tipo 1"
+                                            value={formProduto.nome}
+                                            onChange={e => setFormProduto({...formProduto, nome: e.target.value})}
+                                            error={formErrors.nome}
+                                            required
+                                        />
+                                        <Input 
+                                            label="Código de Barras" 
+                                            placeholder="Ex: 7891020304050"
+                                            value={formProduto.codigo_barras}
+                                            onChange={e => setFormProduto({...formProduto, codigo_barras: e.target.value})}
+                                            error={formErrors.codigo_barras}
+                                            required
+                                        />
+                                        <div className="grid grid-cols-2 gap-4">
+                                            <Input 
+                                                label="Preço de Venda (R$)" 
+                                                type="number" step="0.01" min="0.01"
+                                                placeholder="0.00"
+                                                value={formProduto.preco}
+                                                onChange={e => setFormProduto({...formProduto, preco: e.target.value})}
+                                                error={formErrors.preco}
+                                                required
+                                            />
+                                            <Input 
+                                                label="Estoque Inicial" 
+                                                type="number" min="0"
+                                                placeholder="0"
+                                                value={formProduto.quantidade_estoque}
+                                                onChange={e => setFormProduto({...formProduto, quantidade_estoque: e.target.value})}
+                                            />
+                                        </div>
+                                        <div className="mt-6 flex justify-end gap-3">
+                                            <Button type="button" variant="secondary" onClick={() => setIsProdutoModalOpen(false)}>Cancelar</Button>
+                                            <Button type="submit">Salvar Produto</Button>
+                                        </div>
+                                    </form>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Modal Movimentação */}
+                        {isMovModalOpen && (
+                            <div className="fixed inset-0 bg-gray-900/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+                                <div className="bg-white rounded-xl shadow-xl w-full max-w-md overflow-hidden">
+                                    <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
+                                        <h3 className="text-lg font-semibold text-gray-900">Registrar Movimentação</h3>
+                                        <button onClick={() => setIsMovModalOpen(false)} className="text-gray-400 hover:text-gray-600">
+                                            <i data-lucide="x" className="w-5 h-5"></i>
+                                        </button>
+                                    </div>
+                                    <form onSubmit={handleMovimentacaoSubmit} className="p-6">
+                                        <Select 
+                                            label="Produto"
+                                            value={formMov.produto_id}
+                                            onChange={e => setFormMov({...formMov, produto_id: e.target.value})}
+                                            error={formErrors.produto_id}
+                                            options={produtos.map(p => ({ value: p.id, label: `${p.nome} (Estoque: ${p.estoque})` }))}
+                                            required
+                                        />
+                                        
+                                        <div className="grid grid-cols-2 gap-4">
+                                            <Select 
+                                                label="Tipo de Movimento"
+                                                value={formMov.tipo}
+                                                onChange={e => setFormMov({...formMov, tipo: e.target.value})}
+                                                options={[
+                                                    { value: 'entrada', label: 'Entrada (+)' },
+                                                    { value: 'saida', label: 'Saída (-)' }
+                                                ]}
+                                            />
+                                            <Input 
+                                                label="Quantidade" 
+                                                type="number" min="1"
+                                                placeholder="1"
+                                                value={formMov.quantidade}
+                                                onChange={e => setFormMov({...formMov, quantidade: e.target.value})}
+                                                error={formErrors.quantidade}
+                                                required
+                                            />
+                                        </div>
+                                        
+                                        <div className="mt-6 flex justify-end gap-3">
+                                            <Button type="button" variant="secondary" onClick={() => setIsMovModalOpen(false)}>Cancelar</Button>
+                                            <Button type="submit" className={formMov.tipo === 'saida' ? 'bg-amber-600 hover:bg-amber-700' : ''}>
+                                                Confirmar {formMov.tipo === 'entrada' ? 'Entrada' : 'Saída'}
+                                            </Button>
+                                        </div>
+                                    </form>
+                                </div>
+                            </div>
+                        )}
+                    </main>
+                </div>
+            );
+        };
+
+        // Renderizar a aplicação
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+
+    </script>    
+</body>
+</html>
